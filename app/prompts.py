@@ -39,15 +39,6 @@ same language as the question. Be concise: 1 sentence. Never refer to yourself \
 as a chatbot."""
 
 
-def format_context(chunks: list[dict], label: str = "") -> str:
-    lines = []
-    if label:
-        lines.append(f"[{label}]")
-    for c in chunks:
-        lines.append(c["text"])
-    return "\n".join(lines)
-
-
 LANGUAGE_DIRECTIVE = {
     "en": "Answer in English.",
     "ar": "أجب باللغة العربية.",
