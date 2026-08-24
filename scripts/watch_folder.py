@@ -26,8 +26,16 @@ import sys
 import time
 from pathlib import Path
 
+# Polling, not the OS-native Observer: the native one relies on inotify,
+# which doesn't reliably forward file-change events across a Docker bind
+# mount when the host is Windows (Docker Desktop's WSL2-backed bind mounts
+# don't relay NTFS change notifications into the container's inotify) -
+# confirmed by testing: the native observer worked over a bind mount on
+# macOS but produced no events at all on Windows for the same setup.
+# Polling just scans the directory periodically instead, so it works
+# identically regardless of the host OS or bind mount implementation.
 from watchdog.events import FileSystemEventHandler
-from watchdog.observers import Observer
+from watchdog.observers.polling import PollingObserver as Observer
 
 ROOT = Path(__file__).parent.parent
 POLICY_DIR = ROOT / "policy_library"
