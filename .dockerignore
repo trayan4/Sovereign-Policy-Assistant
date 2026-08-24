@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+chroma_store/
+query_log.sqlite3
+.DS_Store

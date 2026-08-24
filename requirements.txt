@@ -1,0 +1,9 @@
+chromadb==1.5.9
+docling==2.120.3
+fastapi==0.141.1
+langgraph==1.2.11
+ollama==0.6.2
+pydantic==2.13.4
+pymupdf==1.28.2
+uvicorn==0.52.4
+watchdog==6.0.0

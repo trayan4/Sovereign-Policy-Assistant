@@ -1,0 +1,77 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # One-shot: pulls the two models this project needs into the ollama
+  # service's volume, then exits. Runs on every `docker compose up`, but
+  # `ollama pull` is a no-op once a model is already present, so this is
+  # only slow on first run. Retries on failure: `ollama pull` run this way
+  # (a separate container's CLI against a remote OLLAMA_HOST, right after
+  # the server reports healthy) has been observed to fail transiently on
+  # the very first attempt even though the exact same command succeeds on
+  # a retry - a startup race rather than anything wrong with the pull
+  # itself, so a short retry loop is more robust than chasing that further.
+  ollama-init:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    # A shell for-loop here is fragile inside YAML's folded-scalar line
+    # joining (tried it, it silently mangles), so retries are just
+    # written out explicitly instead. List form (one element = one arg to
+    # -c) so compose passes this string through as-is, rather than trying
+    # to shell-split it as a plain scalar and choking on &&/||/().
+    command:
+      - >-
+        (ollama pull gemma2:2b && ollama pull bge-m3) ||
+        (sleep 5 && ollama pull gemma2:2b && ollama pull bge-m3) ||
+        (sleep 5 && ollama pull gemma2:2b && ollama pull bge-m3) ||
+        (sleep 10 && ollama pull gemma2:2b && ollama pull bge-m3)
+
+  app:
+    build: .
+    depends_on:
+      ollama-init:
+        condition: service_completed_successfully
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    volumes:
+      - ./chroma_store:/srv/chroma_store
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Thin Streamlit front end - talks to `app` over HTTP only, never touches
+  # Chroma/Ollama/the LangGraph pipeline directly, so it's a separate,
+  # much smaller image (see ui/Dockerfile) that can be rebuilt or redeployed
+  # independently of the backend.
+  ui:
+    build:
+      context: .
+      dockerfile: ui/Dockerfile
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      - API_URL=http://app:8000
+    ports:
+      - "8501:8501"
+
+volumes:
+  ollama_data:
