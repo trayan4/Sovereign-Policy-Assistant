@@ -39,15 +39,23 @@ def detect_language(text: str) -> str:
 
 
 def retrieve(question: str, language: str, n: int = RETRIEVE_N) -> list[dict]:
-    """Embeds the question and returns the top-n chunks in the question's
-    own language, each as {id, text, metadata, distance}, ordered by
-    relevance (ascending distance)."""
+    """Embeds the question and returns the top-n closest chunks, each as
+    {id, text, metadata, distance}, ordered by relevance (ascending
+    distance). Deliberately NOT filtered by language: bge-m3 is a
+    multilingual embedding model, so a question and its relevant policy
+    text land close together in the same vector space regardless of which
+    language either one is written in - not every document in this
+    library carries a translation in both languages, so hard-filtering by
+    language would make an Arabic question blind to an English-only
+    document (and vice versa) even when it's the only source that answers
+    it. `language` is passed through only because the caller (assess_node)
+    still needs it to know which language to answer IN, not to restrict
+    what counts as a match."""
     resp = ollama.embed(model=EMBED_MODEL, input=[question])
     collection = get_collection()
     res = collection.query(
         query_embeddings=resp["embeddings"],
         n_results=n,
-        where={"language": language},
     )
     results = []
     for id_, doc, meta, dist in zip(
@@ -58,12 +66,20 @@ def retrieve(question: str, language: str, n: int = RETRIEVE_N) -> list[dict]:
 
 
 def get_document_chunks(doc_id: str, language: str) -> list[dict]:
-    """All chunks for a specific document in a specific language, ordered
-    by clause_no (purpose/context first). Used once a target document is
-    identified, to pull its full content rather than just the matched
-    fragment."""
+    """All chunks for a specific document, preferring the requested
+    language but falling back to whatever language the document actually
+    has if it doesn't carry one in `language` - now a real case, not a
+    hypothetical: a document can be English-only or Arabic-only, so a
+    question in the other language can still legitimately match it (see
+    retrieve()). The caller (generate_node) already instructs the model to
+    answer in the question's language regardless of what language the
+    source text is in. Ordered by clause_no (purpose/context first). Used
+    once a target document is identified, to pull its full content rather
+    than just the matched fragment."""
     collection = get_collection()
     res = collection.get(where={"$and": [{"doc_id": doc_id}, {"language": language}]})
+    if not res["ids"]:
+        res = collection.get(where={"doc_id": doc_id})
     chunks = [
         {"id": id_, "text": doc, "metadata": meta}
         for id_, doc, meta in zip(res["ids"], res["documents"], res["metadatas"])
