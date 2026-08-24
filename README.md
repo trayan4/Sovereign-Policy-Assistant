@@ -525,12 +525,14 @@ streamlit run ui/streamlit_app.py
 **Prerequisites:** Docker Desktop (or another Docker Engine) running.
 
 ```bash
-# 1. Bring up ollama + app + ui (pulls model weights into the ollama
-#    container on first run - this step is slow only once)
+# 1. Bring up ollama + app + ui + watcher (pulls model weights into the
+#    ollama container on first run - this step is slow only once)
 docker compose up -d
 
 # 2. Ingest the policy library - run once, inside the app container,
-#    against the same models the running app will use
+#    against the same models the running app will use. Needed only for
+#    this first run; from here on, the watcher service (started as part
+#    of step 1) re-runs this automatically whenever policy_library/ changes.
 docker compose run --rm app python scripts/ingest.py
 
 # 3. Open the UI
@@ -550,18 +552,28 @@ curl -X POST http://localhost:8000/ask \
 docker compose ps                 # check service status
 docker compose logs -f app        # stream the backend's logs live
 docker compose logs -f ui         # stream the UI's logs live
+docker compose logs -f watcher    # stream the folder watcher's logs live
 docker compose down               # stop everything (keeps model weights + ingested data)
 docker compose down -v            # stop everything AND delete model weights (re-pulls next time)
 ```
 
 Ingested data (the vector store, query log, and relationships database) lives
-in `./chroma_store/` on the host, bind-mounted into the `app` container, so it
-survives `docker compose down` and image rebuilds. **Caveat observed in
-testing:** if you delete and recreate that host directory while `app` is
-already running (rather than stopping it first), its bind mount can go stale
-on macOS/Docker Desktop — restart the service (`docker compose restart app`)
-if `/ask` or the admin endpoints start returning file-not-found errors after
-doing that.
+in `./chroma_store/` on the host, bind-mounted into the `app` and `watcher`
+containers, so it survives `docker compose down` and image rebuilds.
+**Caveat observed in testing:** if you delete and recreate that host
+directory while `app` is already running (rather than stopping it first),
+its bind mount can go stale on macOS/Docker Desktop — restart the service
+(`docker compose restart app`) if `/ask` or the admin endpoints start
+returning file-not-found errors after doing that.
+
+**The `watcher` service** (`scripts/watch_folder.py`) watches the host's
+`./policy_library/` (also bind-mounted, not just baked into the image) for
+new or changed PDFs and automatically re-runs the full ingestion pipeline
+after a 5-second quiet period — this is the "drop a new policy PDF into a
+SharePoint-style folder and it re-indexes itself" behavior from the original
+plan. Drop a new or updated PDF into `policy_library/` on the host while the
+stack is running and watch `docker compose logs -f watcher` to see it react;
+no manual re-run of step 2 needed after the first ingestion.
 
 ---
 

@@ -49,6 +49,15 @@ services:
       - OLLAMA_HOST=http://ollama:11434
     volumes:
       - ./chroma_store:/srv/chroma_store
+      # Bind-mounted (rather than relying only on the image's baked-in COPY)
+      # so a manual re-ingest (`docker compose run --rm app python
+      # scripts/ingest.py`) and the watcher service below both see whatever
+      # is currently on the host, not a stale snapshot from whenever the
+      # image was last built. The bind mount shadows the image's copy at
+      # runtime; the Dockerfile COPY stays only so the image is still
+      # self-contained for the no-compose `docker save`/`docker load` export
+      # path documented in the README.
+      - ./policy_library:/srv/policy_library
     ports:
       - "8000:8000"
     healthcheck:
@@ -56,6 +65,31 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+
+  # Watches the host's policy_library/ (bind-mounted, see `app` above) for
+  # new or changed PDFs and re-runs ingestion automatically - the
+  # SharePoint-folder-drop simulation from the original project plan.
+  # Reuses the `app` image (already has watchdog + the full ingestion
+  # pipeline as a dependency) rather than a separate Dockerfile, just with a
+  # different command.
+  watcher:
+    build: .
+    depends_on:
+      ollama-init:
+        condition: service_completed_successfully
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      # Without this, Python block-buffers stdout when it isn't a TTY (true
+      # for any container process), so the watcher's print() logging
+      # ("Detected change...", "Re-indexing...") sits in a buffer instead
+      # of reaching `docker compose logs` in anything close to real time -
+      # confirmed by testing: logs stayed empty for a running container
+      # until this was added.
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./chroma_store:/srv/chroma_store
+      - ./policy_library:/srv/policy_library
+    command: ["python", "scripts/watch_folder.py"]
 
   # Thin Streamlit front end - talks to `app` over HTTP only, never touches
   # Chroma/Ollama/the LangGraph pipeline directly, so it's a separate,
