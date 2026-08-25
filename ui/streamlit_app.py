@@ -146,9 +146,14 @@ st.divider()
 with st.expander("Compliance dashboard"):
     tab_departments, tab_conflicts = st.tabs(["Query volume by department", "Pending policy conflicts"])
 
+    # Both endpoints below now require login (see app/server.py) - not yet
+    # a distinct admin role, just any authenticated account, but no longer
+    # reachable with no credentials at all.
+    auth_headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+
     with tab_departments:
         try:
-            depts = requests.get(f"{API_URL}/departments", timeout=10).json()
+            depts = requests.get(f"{API_URL}/departments", headers=auth_headers, timeout=10).json()
             if depts:
                 st.dataframe(depts, use_container_width=True, hide_index=True)
             else:
@@ -163,7 +168,9 @@ with st.expander("Compliance dashboard"):
             "until a human confirms them here."
         )
         try:
-            pending = requests.get(f"{API_URL}/admin/pending-relationships", timeout=10).json()
+            pending = requests.get(
+                f"{API_URL}/admin/pending-relationships", headers=auth_headers, timeout=10
+            ).json()
         except requests.RequestException as e:
             st.error(f"Couldn't load pending relationships: {e}")
             pending = []
@@ -180,6 +187,7 @@ with st.expander("Compliance dashboard"):
                     requests.post(
                         f"{API_URL}/admin/pending-relationships/{p['id']}/review",
                         json={"approve": True},
+                        headers=auth_headers,
                         timeout=10,
                     )
                     st.rerun()
@@ -187,6 +195,7 @@ with st.expander("Compliance dashboard"):
                     requests.post(
                         f"{API_URL}/admin/pending-relationships/{p['id']}/review",
                         json={"approve": False},
+                        headers=auth_headers,
                         timeout=10,
                     )
                     st.rerun()

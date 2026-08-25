@@ -37,22 +37,32 @@ def get_clearance(authorization: str | None = Header(default=None)) -> str:
 
     try:
         signing_key = _jwks_client.get_signing_key_from_jwt(token)
-        # Signature, issuer, and expiry are all verified - the properties
-        # that actually prove "Keycloak issued this, for this realm, and
-        # it's still valid." Audience is deliberately not checked: the
-        # client isn't configured with an audience mapper yet, so every
-        # token carries Keycloak's default ("account") rather than this
-        # app's client id. A real deployment should add that mapper and
-        # verify audience too - noted here rather than silently skipped.
+        # Signature, issuer, expiry, AND audience are all verified now.
+        # Audience matters on its own, separately from signature: it's what
+        # stops a token legitimately issued by this same Keycloak, for some
+        # OTHER application in the same realm, from being replayed against
+        # this one - a valid signature alone doesn't prove the token was
+        # ever meant for this app. The client is configured with an
+        # audience mapper (see keycloak/realm-export.json) that stamps
+        # this app's client id into every token it issues, which is what
+        # makes checking it here actually mean something.
         payload = jwt.decode(
             token,
             signing_key.key,
             algorithms=["RS256"],
             issuer=ISSUER,
-            options={"verify_aud": False},
+            audience=KEYCLOAK_CLIENT_ID,
         )
-    except jwt.PyJWTError as e:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
+    except Exception:
+        # Deliberately generic, and deliberately catching more than just
+        # jwt.PyJWTError: a truly malformed (non-JWT) string can fail
+        # before jwt's own error types even apply - e.g. in the header
+        # decoding get_signing_key_from_jwt does first - and letting that
+        # raw exception text reach the caller (a base64/encoding error
+        # message, library internals) is an information leak for no
+        # benefit; every failure here means the same thing to the caller
+        # regardless of which layer actually rejected it.
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     roles = payload.get("realm_access", {}).get("roles", [])
     return "cleared" if "cleared_staff" in roles else "standard"
