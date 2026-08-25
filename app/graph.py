@@ -30,6 +30,8 @@ class GraphState(TypedDict, total=False):
     doc_chunks: dict[str, list[dict]]
     answer: str
     citations: list[dict]
+    embed_tokens: int
+    total_tokens: int
 
 
 def detect_language_node(state: GraphState) -> GraphState:
@@ -37,8 +39,8 @@ def detect_language_node(state: GraphState) -> GraphState:
 
 
 def retrieve_node(state: GraphState) -> GraphState:
-    results = retrieve(state["question"], state["language"])
-    return {"retrieved": results}
+    results, embed_tokens = retrieve(state["question"], state["language"])
+    return {"retrieved": results, "embed_tokens": embed_tokens}
 
 
 def assess_node(state: GraphState) -> GraphState:
@@ -129,9 +131,14 @@ def generate_node(state: GraphState) -> GraphState:
     lang = state["language"]
     doc_chunks = state["doc_chunks"]
 
+    embed_tokens = state.get("embed_tokens") or 0
+
     if case == "out_of_scope":
-        answer = _generate(SYSTEM_OUT_OF_SCOPE, build_user_prompt(question, [], lang), lang)
-        return {"answer": answer, "citations": []}
+        answer, prompt_tokens, output_tokens = _generate(
+            SYSTEM_OUT_OF_SCOPE, build_user_prompt(question, [], lang), lang
+        )
+        total = embed_tokens + prompt_tokens + output_tokens
+        return {"answer": answer, "citations": [], "total_tokens": total}
 
     primary_chunks = doc_chunks[state["primary_doc"]]
     primary_governs_note = state.get("governs_note") or "" if case == "contradiction" else ""
@@ -146,16 +153,17 @@ def generate_node(state: GraphState) -> GraphState:
             _format_block(ref_chunks, "Policy B") if ref_chunks else "",
         ]
         prompt = build_user_prompt(question, [b for b in blocks if b], lang)
-        answer = _generate(SYSTEM_CONTRADICTION, prompt, lang)
+        answer, prompt_tokens, output_tokens = _generate(SYSTEM_CONTRADICTION, prompt, lang)
     elif case == "expired":
         prompt = build_user_prompt(question, [_format_block(primary_chunks, "")], lang)
-        answer = _generate(SYSTEM_EXPIRED, prompt, lang)
+        answer, prompt_tokens, output_tokens = _generate(SYSTEM_EXPIRED, prompt, lang)
         answer = f"{answer} {FOLLOW_UP_SENTENCE[lang]}"
     else:
         prompt = build_user_prompt(question, [_format_block(primary_chunks, "")], lang)
-        answer = _generate(SYSTEM_NORMAL, prompt, lang)
+        answer, prompt_tokens, output_tokens = _generate(SYSTEM_NORMAL, prompt, lang)
 
-    return {"answer": answer, "citations": citations}
+    total = embed_tokens + prompt_tokens + output_tokens
+    return {"answer": answer, "citations": citations, "total_tokens": total}
 
 
 def _format_block(chunks: list[dict], label: str) -> str:
@@ -167,7 +175,7 @@ def _format_block(chunks: list[dict], label: str) -> str:
     return "\n".join(lines)
 
 
-def _generate(system: str, user: str, language: str) -> str:
+def _generate(system: str, user: str, language: str) -> tuple[str, int, int]:
     # Reinforced at the system level too, not just in the user turn: for a
     # short/context-light prompt (e.g. out-of-scope, where there's no
     # policy text to ground the answer in) a small model can otherwise
@@ -181,7 +189,10 @@ def _generate(system: str, user: str, language: str) -> str:
         ],
         options={"temperature": 0.1},
     )
-    return resp["message"]["content"].strip()
+    text = resp["message"]["content"].strip()
+    prompt_tokens = resp.get("prompt_eval_count") or 0
+    output_tokens = resp.get("eval_count") or 0
+    return text, prompt_tokens, output_tokens
 
 
 def log_node(state: GraphState) -> GraphState:
@@ -202,6 +213,7 @@ def log_node(state: GraphState) -> GraphState:
         case_type=state["case"],
         doc_ids=doc_ids,
         answer=state["answer"],
+        total_tokens=state.get("total_tokens") or 0,
         escalation_reason=escalation_reason,
         escalation_owner=escalation_owner,
     )
@@ -246,4 +258,5 @@ def ask(question: str, department: str | None = None) -> dict:
         "case": result["case"],
         "citations": result["citations"],
         "language": result["language"],
+        "total_tokens": result.get("total_tokens") or 0,
     }

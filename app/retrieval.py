@@ -38,10 +38,11 @@ def detect_language(text: str) -> str:
     return "ar" if arabic_count > latin_count else "en"
 
 
-def retrieve(question: str, language: str, n: int = RETRIEVE_N) -> list[dict]:
+def retrieve(question: str, language: str, n: int = RETRIEVE_N) -> tuple[list[dict], int]:
     """Embeds the question and returns the top-n closest chunks, each as
     {id, text, metadata, distance}, ordered by relevance (ascending
-    distance). Deliberately NOT filtered by language: bge-m3 is a
+    distance), plus the token count Ollama reports for embedding the
+    question. Deliberately NOT filtered by language: bge-m3 is a
     multilingual embedding model, so a question and its relevant policy
     text land close together in the same vector space regardless of which
     language either one is written in - not every document in this
@@ -52,6 +53,7 @@ def retrieve(question: str, language: str, n: int = RETRIEVE_N) -> list[dict]:
     still needs it to know which language to answer IN, not to restrict
     what counts as a match."""
     resp = ollama.embed(model=EMBED_MODEL, input=[question])
+    embed_tokens = resp.get("prompt_eval_count") or 0
     collection = get_collection()
     res = collection.query(
         query_embeddings=resp["embeddings"],
@@ -62,7 +64,7 @@ def retrieve(question: str, language: str, n: int = RETRIEVE_N) -> list[dict]:
         res["ids"][0], res["documents"][0], res["metadatas"][0], res["distances"][0]
     ):
         results.append({"id": id_, "text": doc, "metadata": meta, "distance": dist})
-    return results
+    return results, embed_tokens
 
 
 def get_document_chunks(doc_id: str, language: str) -> list[dict]:

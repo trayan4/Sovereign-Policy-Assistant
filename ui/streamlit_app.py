@@ -64,6 +64,7 @@ if "last_result" in st.session_state:
             f'{result["answer"]}</div>',
             unsafe_allow_html=True,
         )
+        st.caption(f"🔢 {result.get('total_tokens', 0)} tokens (embedding + generation, from Ollama)")
 
     with col_sources:
         st.subheader("Source")

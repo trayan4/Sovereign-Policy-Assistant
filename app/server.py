@@ -34,6 +34,7 @@ class AskResponse(BaseModel):
     case: str
     language: str
     citations: list[Citation]
+    total_tokens: int
 
 
 @app.get("/health")

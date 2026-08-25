@@ -46,7 +46,7 @@ construction, not by hoping a language model gets it right.
 
 ### 2.2. Agent Pipeline:
 1. This runs once per question
-2. LangGraph nodes: **detect_language** => **retrieve from the chroma_store based on cosine similarity using bge-m3** => **assess** (decide: normal/contradiction/out-of-scope/expired) => **gather_context** (once a doc is identified, retrieves it's entire context, not just the matching chunk) => **generate** (write the answer, in the question's language) => **log_node**: writes every query to a log; for expired / out of scope queries, writes an escalation record.
+2. LangGraph nodes: **detect_language** => **retrieve from the chroma_store based on vector distance (Chroma's default, squared L2 - not cosine) over bge-m3 embeddings** => **assess** (decide: normal/contradiction/out-of-scope/expired) => **gather_context** (once a doc is identified, retrieves it's entire context, not just the matching chunk) => **generate** (write the answer, in the question's language) => **log_node**: writes every query to a log; for expired / out of scope queries, writes an escalation record.
 
 ## Unhappy paths:
 For every question, it searches across the chroma_store for matches. After it finds the matching embeddings, 3 checks are done:
