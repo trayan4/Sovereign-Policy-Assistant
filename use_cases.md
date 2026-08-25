@@ -205,6 +205,7 @@ Generated directly from `use_cases.csv` - every field below is copied as-is from
 **Q:** ما هي مدة الاحتفاظ بسجلات معاملات العملاء؟
 *Role:* standard_user  ·  *Language:* ar
 **Expected:** Correctly retrieves and answers in Arabic from POL-DATA-002, which is now English-only content (minimum 7 years).
+**Actual:** يجب الاحتفاظ بسجلات معاملات العملاء على الأقل لمدة 7 سنوات من تاريخ المعاملة.
 
 **Q:** How long can staff take unpaid leave for?
 *Role:* standard_user  ·  *Language:* en
@@ -216,38 +217,46 @@ Generated directly from `use_cases.csv` - every field below is copied as-is from
 *Role:* standard_user  ·  *Language:* ar
 **Expected:** Answers about customer data classification, NOT unpaid leave - POL-LEAVE-004's Arabic section was replaced with donated content from POL-DATA-001, unrelated to the document's own English topic.
 **Notes:** Tests that a 'mutually exclusive content' document serves genuinely different content per language, not a mistranslation of the same topic.
+**Actual:** يحدد القواعد التصنيفات لبيانات العملاء. تعتبر بيانات العملاء الشخصية، بما في ذلك رقم الهوية الوطنية وادخلات الحساب، محددة كحساسة ويتم تخصيصها فقط على أساس حاجة. لا يجوز نسخ بيانات محددة إلى أجهزة شخصية، أو أجهزة USB، أو تخزين محددات شخصية بأي حال من الأحوال.
 
 **Q:** ما هو الحد الذي يمكن لمدير العلاقات الموافقة عليه لاستثناءات تعهدات القرض؟
 *Role:* standard_user  ·  *Language:* ar
 **Expected:** Refuses (out-of-scope) - cross-lingual match to POL-APPR-002 exists, but it's confidential.
 **Notes:** Combined cross-lingual + confidentiality check.
+**Actual:** لا يوجد في مكتبة السياسات شروح حول هذا الموضوع، سيتم تسجيل سؤالك ليتم تقييمه لاحقًا.
 
 **Q:** ما هو الحد الذي يمكن لمدير العلاقات الموافقة عليه لاستثناءات تعهدات القرض؟
 *Role:* cleared_user  ·  *Language:* ar
 **Expected:** Answers correctly in Arabic from POL-APPR-002 (English-only source), with a visible Confidential tag.
+**Actual:** يمكن لمدير العلاقات الموافقة على استثناءات تعهدات القرض حتى قدر 50,000 درهم.
 
 ## Arabic
 
 **Q:** ما هو الحد الأقصى لعدد أيام الإجازة السنوية التي يمكن ترحيلها؟
-*Role:* any  ·  *Language:* ar
+*Role:* cleared_user  ·  *Language:* ar
 **Expected:** Answers 5 days, cites POL-LEAVE-001.
+**Actual:** يُمكن ترحيل الحد الأقصى 5 أيام إجازة سنوية غير مستخدمة إلى السنة التالية.
 
 **Q:** كم مرة يجب تغيير كلمات مرور الأنظمة؟
-*Role:* any  ·  *Language:* ar
+*Role:* cleared_user  ·  *Language:* ar
 **Expected:** Answers every 90 days, cites POL-IT-001.
+**Actual:** يجب تغيير كلمات مرور الأنظمة كل 90 يومًا على الأقل.
 
 **Q:** ما هو الحد الأقصى للإيداع النقدي اليومي في فرع دبي الرئيسي؟
-*Role:* any  ·  *Language:* ar
+*Role:* standard_user  ·  *Language:* ar
 **Expected:** Explains both policies, states Policy A (POL-CASH-002) governs.
 **Notes:** Known cosmetic issue from prior testing: sometimes renders as a numbered list instead of flowing prose.
+**Actual:** 1. يحدد الحد الأقصى للإيداع النقدي اليومي في فرع دبي الرئيسي بـ 35,000 درهم إماراتي لكل عميل ًيا يوم. 2. يحدد الحد الأقصى للإيداع النقدي اليومي المقبول عند نوافذ الفروع على مستوى المجموعة بـ 50,000 درهم إماراتي لكل عميل ًيا. 3. يُحدد **Policy A** الحد الأقصى للإيداع النقدي اليومي في فرع دبي الرئيسي، حيث يُحدد الحد الأقصى بـ 35,000 درهم إماراتي لكل عميل ًيا يوم.
 
 **Q:** ما هو بدل معدات العمل عن بُعد المتاح حاليًا للموظفين؟
-*Role:* any  ·  *Language:* ar
+*Role:* standard_user  ·  *Language:* ar
 **Expected:** Refuses, points to the document owner.
+**Actual:** لا يمكن تحديد البديل الحالي للموظفين، إذ ان هذه السياسة انتهت في 01-06-2024 ولم يتم تجديدها أو استبدالها. يرجى الرجوع إلى تفاصيل المصدر أدناه لمعرفة جهة الاتصال.
 
 **Q:** ما هي سياسة مواقف السيارات للموظفين؟
-*Role:* any  ·  *Language:* ar
+*Role:* standard_user  ·  *Language:* ar
 **Expected:** Honest refusal, logged for follow-up.
+**Actual:** لا يوجد في مكتبة السياسات هذه معلومات عن سياسة مواقف السيارات للموظفين، سيتم تسجيل سؤالك لمعالجة لاحقًا.
 
 ## Edge case
 
@@ -275,6 +284,7 @@ Generated directly from `use_cases.csv` - every field below is copied as-is from
 **Q:** A question mixing English and Arabic in the same sentence.
 *Role:* any  ·  *Language:* en/ar
 **Expected:** Handled honestly - either answers or refuses, does not break.
+**Actual:** 
 
 **Q:** What approval I need for a purchase order over AED 100,000?
 *Role:* cleared_user  ·  *Language:* en
