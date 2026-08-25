@@ -23,29 +23,20 @@ JWKS_URL = f"{ISSUER}/protocol/openid-connect/certs"
 _jwks_client = PyJWKClient(JWKS_URL)
 
 
-def get_clearance(authorization: str | None = Header(default=None)) -> str:
-    """FastAPI dependency: validates the bearer token's signature, issuer,
-    and expiry against Keycloak, then reads the role out of the verified
-    payload - never out of anything the caller could have written itself.
-    Returns "cleared" if the token's realm_access.roles includes
-    cleared_staff, otherwise "standard". No valid token at all is a 401,
-    not a silent "standard" default - a confidential-adjacent question
-    should never be answerable by someone who isn't even logged in."""
+def _validate(authorization: str | None) -> list[str]:
+    """Shared by every auth dependency below: validates signature, issuer,
+    expiry, and audience against Keycloak, then returns the roles list out
+    of the verified payload - never out of anything the caller could have
+    written itself. Raises 401 for anything wrong with the token itself;
+    callers decide what to do with the roles (that's an authorization
+    question, not an authentication one, and the two shouldn't be
+    conflated in one function)."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing bearer token")
     token = authorization.removeprefix("Bearer ").strip()
 
     try:
         signing_key = _jwks_client.get_signing_key_from_jwt(token)
-        # Signature, issuer, expiry, AND audience are all verified now.
-        # Audience matters on its own, separately from signature: it's what
-        # stops a token legitimately issued by this same Keycloak, for some
-        # OTHER application in the same realm, from being replayed against
-        # this one - a valid signature alone doesn't prove the token was
-        # ever meant for this app. The client is configured with an
-        # audience mapper (see keycloak/realm-export.json) that stamps
-        # this app's client id into every token it issues, which is what
-        # makes checking it here actually mean something.
         payload = jwt.decode(
             token,
             signing_key.key,
@@ -64,5 +55,31 @@ def get_clearance(authorization: str | None = Header(default=None)) -> str:
         # regardless of which layer actually rejected it.
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-    roles = payload.get("realm_access", {}).get("roles", [])
+    return payload.get("realm_access", {}).get("roles", [])
+
+
+def get_clearance(authorization: str | None = Header(default=None)) -> str:
+    """FastAPI dependency for /ask: any authenticated account gets at
+    least "standard" access - this only decides whether confidential
+    content is ALSO allowed, it doesn't gate access to asking questions
+    at all. Returns "cleared" if the token's roles include cleared_staff,
+    otherwise "standard"."""
+    roles = _validate(authorization)
     return "cleared" if "cleared_staff" in roles else "standard"
+
+
+def get_admin(authorization: str | None = Header(default=None)) -> str:
+    """FastAPI dependency for the compliance dashboard: query stats and
+    the governance-conflict review queue are a DIFFERENT kind of access
+    than cleared_staff - being authorized to read confidential policy
+    content when asking a question doesn't mean being authorized to view
+    org-wide query volume or approve a conflict that changes what every
+    future user gets told, and vice versa. A valid token that simply
+    lacks the compliance_admin role is a 403 (authenticated, but not
+    permitted), not a 401 (not authenticated at all) - the distinction
+    matters for a client trying to tell "log in again" apart from
+    "this account will never be allowed to do this."""
+    roles = _validate(authorization)
+    if "compliance_admin" not in roles:
+        raise HTTPException(status_code=403, detail="Requires compliance_admin role")
+    return "admin"

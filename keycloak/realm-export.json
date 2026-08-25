@@ -11,6 +11,10 @@
       {
         "name": "cleared_staff",
         "description": "Authorized to see confidential-classified policies in addition to everything standard_staff can see."
+      },
+      {
+        "name": "compliance_admin",
+        "description": "Can view the compliance dashboard (query volume, escalations) and review/approve flagged governance conflicts. Independent of cleared_staff - a different kind of access, not a superset or subset of it."
       }
     ]
   },
@@ -40,6 +44,19 @@
       ],
       "requiredActions": [],
       "realmRoles": ["cleared_staff"]
+    },
+    {
+      "username": "admin_user",
+      "enabled": true,
+      "email": "admin_user@example.internal",
+      "emailVerified": true,
+      "firstName": "Compliance",
+      "lastName": "Demo Admin",
+      "credentials": [
+        {"type": "password", "value": "demo1234", "temporary": false}
+      ],
+      "requiredActions": [],
+      "realmRoles": ["compliance_admin"]
     }
   ],
   "clients": [

@@ -4,6 +4,8 @@ the FastAPI backend (app/server.py) over HTTP - it never touches the
 LangGraph pipeline, Chroma, or Ollama directly, so this stays a thin,
 independently deployable UI layer over an already-tested API."""
 
+import base64
+import json
 import os
 
 import requests
@@ -28,6 +30,21 @@ CASE_LABELS = {
     "expired": ("⏱️", "Source policy has expired"),
     "out_of_scope": ("❔", "Not covered by any policy"),
 }
+
+
+def _token_roles(token: str) -> list[str]:
+    """Reads realm_access.roles straight out of the token's payload, with
+    no signature check - purely a UI convenience to decide what to SHOW,
+    not a security boundary. The real enforcement is server-side
+    (app/auth.py's get_admin), which does verify the signature on every
+    request; a user could edit this decoded value in their own browser
+    and it would change nothing except which buttons they see, since the
+    backend would still reject anything they're not actually authorized
+    for."""
+    payload = token.split(".")[1]
+    payload += "=" * (-len(payload) % 4)
+    claims = json.loads(base64.urlsafe_b64decode(payload))
+    return claims.get("realm_access", {}).get("roles", [])
 
 
 def _login(username: str, password: str) -> bool:
@@ -57,8 +74,10 @@ def _login(username: str, password: str) -> bool:
     if resp.status_code != 200:
         st.error("Invalid username or password.")
         return False
-    st.session_state["access_token"] = resp.json()["access_token"]
+    token = resp.json()["access_token"]
+    st.session_state["access_token"] = token
     st.session_state["username"] = username
+    st.session_state["roles"] = _token_roles(token)
     return True
 
 
@@ -143,59 +162,65 @@ if "last_result" in st.session_state:
 
 st.divider()
 
-with st.expander("Compliance dashboard"):
-    tab_departments, tab_conflicts = st.tabs(["Query volume by department", "Pending policy conflicts"])
+# The whole section is hidden, not just the API calls inside it gated -
+# a standard_user or cleared_user account never even sees that this
+# exists, matching what compliance_admin is actually for (a distinct
+# kind of access, not a superset of cleared_staff - see app/auth.py).
+# This check alone is NOT the security boundary, just the UX one: the
+# real enforcement is server-side (get_admin validates the token's
+# signature on every request), so even if someone found a way to force
+# this block to render, the API calls inside would still be rejected.
+if "compliance_admin" in st.session_state.get("roles", []):
+    with st.expander("Compliance dashboard"):
+        tab_departments, tab_conflicts = st.tabs(["Query volume by department", "Pending policy conflicts"])
 
-    # Both endpoints below now require login (see app/server.py) - not yet
-    # a distinct admin role, just any authenticated account, but no longer
-    # reachable with no credentials at all.
-    auth_headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+        auth_headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
 
-    with tab_departments:
-        try:
-            depts = requests.get(f"{API_URL}/departments", headers=auth_headers, timeout=10).json()
-            if depts:
-                st.dataframe(depts, use_container_width=True, hide_index=True)
-            else:
-                st.info("No queries logged yet.")
-        except requests.RequestException as e:
-            st.error(f"Couldn't load department summary: {e}")
+        with tab_departments:
+            try:
+                depts = requests.get(f"{API_URL}/departments", headers=auth_headers, timeout=10).json()
+                if depts:
+                    st.dataframe(depts, use_container_width=True, hide_index=True)
+                else:
+                    st.info("No queries logged yet.")
+            except requests.RequestException as e:
+                st.error(f"Couldn't load department summary: {e}")
 
-    with tab_conflicts:
-        st.caption(
-            "Candidate conflicts between current policies that don't explicitly "
-            "declare a relationship - flagged automatically, never published "
-            "until a human confirms them here."
-        )
-        try:
-            pending = requests.get(
-                f"{API_URL}/admin/pending-relationships", headers=auth_headers, timeout=10
-            ).json()
-        except requests.RequestException as e:
-            st.error(f"Couldn't load pending relationships: {e}")
-            pending = []
+        with tab_conflicts:
+            st.caption(
+                "Candidate conflicts between current policies that don't explicitly "
+                "declare a relationship - flagged automatically, never published "
+                "until a human confirms them here."
+            )
+            try:
+                pending = requests.get(
+                    f"{API_URL}/admin/pending-relationships", headers=auth_headers, timeout=10
+                ).json()
+            except requests.RequestException as e:
+                st.error(f"Couldn't load pending relationships: {e}")
+                pending = []
 
-        if not pending:
-            st.success("Nothing pending review.")
-        for p in pending:
-            with st.container(border=True):
-                st.markdown(f"**{p['source_doc']}** vs **{p['target_doc']}**")
-                st.caption(f"Confidence: {p['confidence']}")
-                st.text(p["evidence"])
-                col_approve, col_reject = st.columns(2)
-                if col_approve.button("Approve", key=f"approve_{p['id']}"):
-                    requests.post(
-                        f"{API_URL}/admin/pending-relationships/{p['id']}/review",
-                        json={"approve": True},
-                        headers=auth_headers,
-                        timeout=10,
-                    )
-                    st.rerun()
-                if col_reject.button("Reject", key=f"reject_{p['id']}"):
-                    requests.post(
-                        f"{API_URL}/admin/pending-relationships/{p['id']}/review",
-                        json={"approve": False},
-                        headers=auth_headers,
-                        timeout=10,
-                    )
-                    st.rerun()
+            if not pending:
+                st.success("Nothing pending review.")
+            for p in pending:
+                with st.container(border=True):
+                    st.markdown(f"**{p['source_doc']}** vs **{p['target_doc']}**")
+                    st.caption(f"Confidence: {p['confidence']}")
+                    st.text(p["evidence"])
+                    col_approve, col_reject = st.columns(2)
+                    if col_approve.button("Approve", key=f"approve_{p['id']}"):
+                        requests.post(
+                            f"{API_URL}/admin/pending-relationships/{p['id']}/review",
+                            json={"approve": True},
+                            headers=auth_headers,
+                            timeout=10,
+                        )
+                        st.rerun()
+                    if col_reject.button("Reject", key=f"reject_{p['id']}"):
+                        requests.post(
+                            f"{API_URL}/admin/pending-relationships/{p['id']}/review",
+                            json={"approve": False},
+                            headers=auth_headers,
+                            timeout=10,
+                        )
+                        st.rerun()
