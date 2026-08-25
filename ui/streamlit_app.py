@@ -122,7 +122,14 @@ if ask_clicked and question.strip():
                 st.session_state.clear()
                 st.rerun()
             resp.raise_for_status()
-            st.session_state["last_result"] = resp.json()
+            result_data = resp.json()
+            # Stored alongside the result specifically so the "Raise a
+            # Service Request" form below always refers to the question
+            # that was actually asked and refused - not whatever might be
+            # sitting in the live input box if the user has since typed
+            # something new without submitting it.
+            result_data["question"] = question
+            st.session_state["last_result"] = result_data
         except requests.RequestException as e:
             st.error(f"Couldn't reach the assistant: {e}")
 
@@ -141,6 +148,42 @@ if "last_result" in st.session_state:
             unsafe_allow_html=True,
         )
         st.caption(f"🔢 {result.get('total_tokens', 0)} tokens (embedding + generation, from Ollama)")
+
+        if result["case"] in ("out_of_scope", "expired"):
+            # Distinct from the automatic escalation log_node already
+            # writes for every out_of_scope/expired case regardless of
+            # what the user does next (see app/query_log.py) - this is
+            # the active path: the person who got refused can actually
+            # do something about it, right here, instead of it silently
+            # becoming a database row nobody follows up on.
+            if st.session_state.get("last_sr_reference"):
+                st.success(
+                    f"Service request raised: **{st.session_state['last_sr_reference']}**"
+                )
+                del st.session_state["last_sr_reference"]
+            with st.expander("📝 Raise a Service Request"):
+                with st.form("sr_form"):
+                    urgency = st.selectbox("Urgency", ["Low", "Medium", "High"])
+                    note = st.text_area("Note (optional)", placeholder="Any extra context for whoever picks this up")
+                    sr_submitted = st.form_submit_button("Submit request")
+                if sr_submitted:
+                    try:
+                        sr_resp = requests.post(
+                            f"{API_URL}/follow-up/sr",
+                            json={
+                                "question": result.get("question", question),
+                                "case_type": result["case"],
+                                "urgency": urgency,
+                                "note": note or None,
+                            },
+                            headers={"Authorization": f"Bearer {st.session_state['access_token']}"},
+                            timeout=10,
+                        )
+                        sr_resp.raise_for_status()
+                        st.session_state["last_sr_reference"] = sr_resp.json()["reference"]
+                        st.rerun()
+                    except requests.RequestException as e:
+                        st.error(f"Couldn't raise the service request: {e}")
 
     with col_sources:
         st.subheader("Source")
@@ -172,7 +215,9 @@ st.divider()
 # this block to render, the API calls inside would still be rejected.
 if "compliance_admin" in st.session_state.get("roles", []):
     with st.expander("Compliance dashboard"):
-        tab_departments, tab_conflicts = st.tabs(["Query volume by department", "Pending policy conflicts"])
+        tab_departments, tab_conflicts, tab_srs = st.tabs(
+            ["Query volume by department", "Pending policy conflicts", "Service requests"]
+        )
 
         auth_headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
 
@@ -220,6 +265,35 @@ if "compliance_admin" in st.session_state.get("roles", []):
                         requests.post(
                             f"{API_URL}/admin/pending-relationships/{p['id']}/review",
                             json={"approve": False},
+                            headers=auth_headers,
+                            timeout=10,
+                        )
+                        st.rerun()
+
+        with tab_srs:
+            st.caption(
+                "Service requests raised directly by staff from a refused answer - "
+                "the active follow-up queue, not just an escalation count."
+            )
+            try:
+                srs = requests.get(f"{API_URL}/admin/service-requests", headers=auth_headers, timeout=10).json()
+            except requests.RequestException as e:
+                st.error(f"Couldn't load service requests: {e}")
+                srs = []
+
+            if not srs:
+                st.success("No open service requests.")
+            for sr in srs:
+                with st.container(border=True):
+                    urgency_color = {"High": "red", "Medium": "orange", "Low": "gray"}.get(sr["urgency"], "gray")
+                    st.markdown(f"**{sr['reference']}**  ·  :{urgency_color}[{sr['urgency']}]")
+                    st.caption(f"Raised by {sr['requester']} · {sr['case_type']} · {sr['created_at']}")
+                    st.text(sr["question"])
+                    if sr.get("note"):
+                        st.caption(f"Note: {sr['note']}")
+                    if st.button("Mark resolved", key=f"resolve_sr_{sr['id']}"):
+                        requests.post(
+                            f"{API_URL}/admin/service-requests/{sr['id']}/resolve",
                             headers=auth_headers,
                             timeout=10,
                         )

@@ -23,12 +23,12 @@ JWKS_URL = f"{ISSUER}/protocol/openid-connect/certs"
 _jwks_client = PyJWKClient(JWKS_URL)
 
 
-def _validate(authorization: str | None) -> list[str]:
+def _validate(authorization: str | None) -> dict:
     """Shared by every auth dependency below: validates signature, issuer,
-    expiry, and audience against Keycloak, then returns the roles list out
-    of the verified payload - never out of anything the caller could have
-    written itself. Raises 401 for anything wrong with the token itself;
-    callers decide what to do with the roles (that's an authorization
+    expiry, and audience against Keycloak, then returns the verified
+    payload itself - never anything the caller could have written itself.
+    Raises 401 for anything wrong with the token itself; callers decide
+    what to do with the payload's contents (that's an authorization
     question, not an authentication one, and the two shouldn't be
     conflated in one function)."""
     if not authorization or not authorization.startswith("Bearer "):
@@ -55,7 +55,7 @@ def _validate(authorization: str | None) -> list[str]:
         # regardless of which layer actually rejected it.
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-    return payload.get("realm_access", {}).get("roles", [])
+    return payload
 
 
 def get_clearance(authorization: str | None = Header(default=None)) -> str:
@@ -64,7 +64,7 @@ def get_clearance(authorization: str | None = Header(default=None)) -> str:
     content is ALSO allowed, it doesn't gate access to asking questions
     at all. Returns "cleared" if the token's roles include cleared_staff,
     otherwise "standard"."""
-    roles = _validate(authorization)
+    roles = _validate(authorization).get("realm_access", {}).get("roles", [])
     return "cleared" if "cleared_staff" in roles else "standard"
 
 
@@ -79,7 +79,16 @@ def get_admin(authorization: str | None = Header(default=None)) -> str:
     permitted), not a 401 (not authenticated at all) - the distinction
     matters for a client trying to tell "log in again" apart from
     "this account will never be allowed to do this."""
-    roles = _validate(authorization)
+    roles = _validate(authorization).get("realm_access", {}).get("roles", [])
     if "compliance_admin" not in roles:
         raise HTTPException(status_code=403, detail="Requires compliance_admin role")
     return "admin"
+
+
+def get_username(authorization: str | None = Header(default=None)) -> str:
+    """FastAPI dependency for anything that needs to know WHO is asking,
+    not just whether they're allowed to - e.g. raising a service request,
+    where the requester should be the actual logged-in identity, not
+    something the client could type into the request body itself."""
+    payload = _validate(authorization)
+    return payload.get("preferred_username", "unknown")
