@@ -1,0 +1,57 @@
+{
+  "realm": "sovereign-policy",
+  "enabled": true,
+  "sslRequired": "none",
+  "roles": {
+    "realm": [
+      {
+        "name": "standard_staff",
+        "description": "Can ask policy questions. No access to confidential-classified policies."
+      },
+      {
+        "name": "cleared_staff",
+        "description": "Authorized to see confidential-classified policies in addition to everything standard_staff can see."
+      }
+    ]
+  },
+  "users": [
+    {
+      "username": "standard_user",
+      "enabled": true,
+      "email": "standard_user@example.internal",
+      "emailVerified": true,
+      "firstName": "Standard",
+      "lastName": "Demo User",
+      "credentials": [
+        {"type": "password", "value": "demo1234", "temporary": false}
+      ],
+      "requiredActions": [],
+      "realmRoles": ["standard_staff"]
+    },
+    {
+      "username": "cleared_user",
+      "enabled": true,
+      "email": "cleared_user@example.internal",
+      "emailVerified": true,
+      "firstName": "Cleared",
+      "lastName": "Demo User",
+      "credentials": [
+        {"type": "password", "value": "demo1234", "temporary": false}
+      ],
+      "requiredActions": [],
+      "realmRoles": ["cleared_staff"]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "sovereign-policy-app",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["*"],
+      "webOrigins": ["*"]
+    }
+  ]
+}
