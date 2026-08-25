@@ -3,9 +3,10 @@
 interface a front end (or the demo UI) talks to, and what the Docker
 container runs."""
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 
+from app.auth import get_clearance
 from app.graph import ask
 from app.query_log import department_summary
 from app.relationships_db import list_pending, review_pending
@@ -16,13 +17,6 @@ app = FastAPI(title="Sovereign Policy Assistant")
 class AskRequest(BaseModel):
     question: str
     department: str | None = None
-    # Temporary, Phase 1 only: there's no real identity provider yet (see
-    # app/graph.py's ask()), so this lets the filtering logic itself be
-    # tested end-to-end. Once Keycloak is wired up (Phase 2/3), this stops
-    # being caller-supplied and gets read from the validated JWT instead -
-    # a client claiming clearance for itself, unauthenticated, isn't a
-    # real access control, only a placeholder for the piece not built yet.
-    clearance: str = "standard"
 
 
 class Citation(BaseModel):
@@ -51,8 +45,12 @@ def health():
 
 
 @app.post("/ask", response_model=AskResponse)
-def ask_endpoint(req: AskRequest):
-    result = ask(req.question, department=req.department, clearance=req.clearance)
+def ask_endpoint(req: AskRequest, clearance: str = Depends(get_clearance)):
+    # clearance is never read from req - see app/auth.py. A valid,
+    # Keycloak-signed token is required to reach this endpoint at all;
+    # get_clearance() raises 401 before this line runs if one wasn't
+    # presented, so there's no unauthenticated fallback to "standard" here.
+    result = ask(req.question, department=req.department, clearance=clearance)
     return result
 
 

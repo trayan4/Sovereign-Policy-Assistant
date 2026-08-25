@@ -74,8 +74,13 @@ services:
     depends_on:
       ollama-init:
         condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy
     environment:
       - OLLAMA_HOST=http://ollama:11434
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_REALM=sovereign-policy
+      - KEYCLOAK_CLIENT_ID=sovereign-policy-app
     volumes:
       - ./chroma_store:/srv/chroma_store
       # Bind-mounted (rather than relying only on the image's baked-in COPY)
@@ -133,6 +138,9 @@ services:
         condition: service_healthy
     environment:
       - API_URL=http://app:8000
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_REALM=sovereign-policy
+      - KEYCLOAK_CLIENT_ID=sovereign-policy-app
     ports:
       - "8501:8501"
 

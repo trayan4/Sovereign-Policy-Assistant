@@ -10,6 +10,10 @@ import requests
 import streamlit as st
 
 API_URL = os.environ.get("API_URL", "http://localhost:8000")
+KEYCLOAK_URL = os.environ.get("KEYCLOAK_URL", "http://keycloak:8080")
+KEYCLOAK_REALM = os.environ.get("KEYCLOAK_REALM", "sovereign-policy")
+KEYCLOAK_CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "sovereign-policy-app")
+TOKEN_URL = f"{KEYCLOAK_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/token"
 
 st.set_page_config(page_title="Sovereign Policy Assistant", layout="wide")
 st.title("Sovereign Policy Assistant")
@@ -25,19 +29,58 @@ CASE_LABELS = {
     "out_of_scope": ("❔", "Not covered by any policy"),
 }
 
+
+def _login(username: str, password: str) -> bool:
+    """Direct Access Grant (Resource Owner Password Credentials): this app
+    exchanges the username/password for a token itself, server-side,
+    rather than redirecting the browser through Keycloak's own login page
+    (the more familiar OAuth flow for a public/JS client). That's a
+    deliberate choice, not a shortcut: Streamlit is a trusted first-party
+    server-side app, not an untrusted browser client, which is exactly the
+    scenario this grant type exists for - and it sidesteps the redirect-
+    URL/issuer-mismatch problems that come with the browser reaching
+    Keycloak through a different network path than this server does."""
+    try:
+        resp = requests.post(
+            TOKEN_URL,
+            data={
+                "client_id": KEYCLOAK_CLIENT_ID,
+                "grant_type": "password",
+                "username": username,
+                "password": password,
+            },
+            timeout=10,
+        )
+    except requests.RequestException as e:
+        st.error(f"Couldn't reach the identity service: {e}")
+        return False
+    if resp.status_code != 200:
+        st.error("Invalid username or password.")
+        return False
+    st.session_state["access_token"] = resp.json()["access_token"]
+    st.session_state["username"] = username
+    return True
+
+
+if "access_token" not in st.session_state:
+    st.subheader("Log in")
+    with st.form("login_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        login_clicked = st.form_submit_button("Log in", type="primary")
+    if login_clicked and username and password:
+        if _login(username, password):
+            st.rerun()
+    st.stop()
+
 with st.sidebar:
+    st.caption(f"Logged in as **{st.session_state['username']}**")
+    if st.button("Log out"):
+        st.session_state.clear()
+        st.rerun()
     st.header("Ask a question")
     department = st.text_input("Department (optional)", placeholder="e.g. Retail Banking")
     st.caption("Used only for the query log / compliance view below.")
-    clearance = st.selectbox(
-        "Clearance (temporary - no login yet)",
-        options=["standard", "cleared"],
-        help=(
-            "Placeholder until real identity (Keycloak) is wired up. "
-            "'standard' can never see confidential-classified policies, "
-            "regardless of how closely they'd otherwise match."
-        ),
-    )
 
 with st.form("ask_form"):
     question = st.text_input(
@@ -51,9 +94,14 @@ if ask_clicked and question.strip():
         try:
             resp = requests.post(
                 f"{API_URL}/ask",
-                json={"question": question, "department": department or None, "clearance": clearance},
+                json={"question": question, "department": department or None},
+                headers={"Authorization": f"Bearer {st.session_state['access_token']}"},
                 timeout=120,
             )
+            if resp.status_code == 401:
+                st.error("Your session has expired - please log in again.")
+                st.session_state.clear()
+                st.rerun()
             resp.raise_for_status()
             st.session_state["last_result"] = resp.json()
         except requests.RequestException as e:
