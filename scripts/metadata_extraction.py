@@ -34,6 +34,7 @@ LABEL_ALIASES = {
     "expiry date": "expiry_date",
     "expiration date": "expiry_date",
     "approver": "approver_raw",
+    "classification": "classification",
 }
 
 
@@ -79,6 +80,11 @@ def extract_metadata_fields(doc) -> dict:
         name, _, role = fields.pop("approver_raw").partition(",")
         fields["approver_name"] = name.strip()
         fields["approver_role"] = role.strip()
+
+    # Optional field - most documents don't declare one at all, which means
+    # "nothing restricted about this document", not "unknown". Normalized
+    # to lowercase so "Confidential" and "confidential" are treated the same.
+    fields["classification"] = fields.get("classification", "standard").strip().lower()
 
     fields["title"] = extract_title(doc)
     return fields

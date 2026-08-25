@@ -16,6 +16,13 @@ app = FastAPI(title="Sovereign Policy Assistant")
 class AskRequest(BaseModel):
     question: str
     department: str | None = None
+    # Temporary, Phase 1 only: there's no real identity provider yet (see
+    # app/graph.py's ask()), so this lets the filtering logic itself be
+    # tested end-to-end. Once Keycloak is wired up (Phase 2/3), this stops
+    # being caller-supplied and gets read from the validated JWT instead -
+    # a client claiming clearance for itself, unauthenticated, isn't a
+    # real access control, only a placeholder for the piece not built yet.
+    clearance: str = "standard"
 
 
 class Citation(BaseModel):
@@ -27,6 +34,7 @@ class Citation(BaseModel):
     approver_name: str
     approver_role: str
     governs_note: str
+    confidential: bool
 
 
 class AskResponse(BaseModel):
@@ -44,7 +52,7 @@ def health():
 
 @app.post("/ask", response_model=AskResponse)
 def ask_endpoint(req: AskRequest):
-    result = ask(req.question, department=req.department)
+    result = ask(req.question, department=req.department, clearance=req.clearance)
     return result
 
 

@@ -29,6 +29,15 @@ with st.sidebar:
     st.header("Ask a question")
     department = st.text_input("Department (optional)", placeholder="e.g. Retail Banking")
     st.caption("Used only for the query log / compliance view below.")
+    clearance = st.selectbox(
+        "Clearance (temporary - no login yet)",
+        options=["standard", "cleared"],
+        help=(
+            "Placeholder until real identity (Keycloak) is wired up. "
+            "'standard' can never see confidential-classified policies, "
+            "regardless of how closely they'd otherwise match."
+        ),
+    )
 
 with st.form("ask_form"):
     question = st.text_input(
@@ -42,7 +51,7 @@ if ask_clicked and question.strip():
         try:
             resp = requests.post(
                 f"{API_URL}/ask",
-                json={"question": question, "department": department or None},
+                json={"question": question, "department": department or None, "clearance": clearance},
                 timeout=120,
             )
             resp.raise_for_status()
@@ -72,7 +81,10 @@ if "last_result" in st.session_state:
             st.info("No policy document matched this question closely enough to cite.")
         for c in result["citations"]:
             with st.container(border=True):
-                st.markdown(f"**{c['title']}**")
+                title_line = f"**{c['title']}**"
+                if c.get("confidential"):
+                    title_line += "  🔒 :orange[Confidential]"
+                st.markdown(title_line)
                 st.caption(f"{c['doc_id']} · v{c['version']}")
                 status_word = "CURRENT" if c["status"] == "current" else "EXPIRED"
                 status_color = "green" if c["status"] == "current" else "red"

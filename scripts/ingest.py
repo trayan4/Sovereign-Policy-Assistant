@@ -430,6 +430,7 @@ def build_chunks(doc_id: str, doc, meta: dict, pdf_page_for=None) -> list[dict]:
                 "approver_name": meta["approver_name"],
                 "approver_role": meta["approver_role"],
                 "status": meta["status"],
+                "classification": meta.get("classification", "standard"),
                 "language": c["language"],
                 "chunk_type": c["chunk_type"],
                 "clause_no": c["clause_no"],

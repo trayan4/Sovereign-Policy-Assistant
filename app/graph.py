@@ -21,6 +21,7 @@ from app.retrieval import detect_language, get_document_chunks, retrieve
 class GraphState(TypedDict, total=False):
     question: str
     department: str | None
+    clearance: str
     language: str
     retrieved: list[dict]
     case: str
@@ -32,6 +33,7 @@ class GraphState(TypedDict, total=False):
     citations: list[dict]
     embed_tokens: int
     total_tokens: int
+    excluded_best_distance: float | None
 
 
 def detect_language_node(state: GraphState) -> GraphState:
@@ -39,8 +41,15 @@ def detect_language_node(state: GraphState) -> GraphState:
 
 
 def retrieve_node(state: GraphState) -> GraphState:
-    results, embed_tokens = retrieve(state["question"], state["language"])
-    return {"retrieved": results, "embed_tokens": embed_tokens}
+    clearance = state.get("clearance") or "standard"
+    results, embed_tokens, excluded_best_distance = retrieve(
+        state["question"], state["language"], clearance
+    )
+    return {
+        "retrieved": results,
+        "embed_tokens": embed_tokens,
+        "excluded_best_distance": excluded_best_distance,
+    }
 
 
 def assess_node(state: GraphState) -> GraphState:
@@ -56,6 +65,18 @@ def assess_node(state: GraphState) -> GraphState:
     did when they came from a JSON file."""
     retrieved = state["retrieved"]
     if not retrieved or retrieved[0]["distance"] > OUT_OF_SCOPE_DISTANCE:
+        return {"case": "out_of_scope"}
+
+    excluded_best_distance = state.get("excluded_best_distance")
+    if excluded_best_distance is not None and excluded_best_distance < retrieved[0]["distance"]:
+        # The single best-matching document for this question was
+        # confidential and got excluded (see retrieve()) - and it scored
+        # closer than anything we're actually allowed to answer from.
+        # Substituting the next-best allowed document here would mean
+        # confidently answering from something that isn't really the best
+        # match for this question at all - refusing is the honest
+        # response, the same one this question would get if no document
+        # covered it.
         return {"case": "out_of_scope"}
 
     by_doc: dict[str, dict] = {}
@@ -96,14 +117,15 @@ def gather_context_node(state: GraphState) -> GraphState:
     fragment retrieval happened to match - the model should see the whole
     policy, not one sentence stripped of its surroundings."""
     lang = state["language"]
+    clearance = state.get("clearance") or "standard"
     doc_chunks = {}
     if state["case"] == "out_of_scope":
         return {"doc_chunks": {}}
 
-    doc_chunks[state["primary_doc"]] = get_document_chunks(state["primary_doc"], lang)
+    doc_chunks[state["primary_doc"]] = get_document_chunks(state["primary_doc"], lang, clearance)
     if state["case"] == "contradiction" and state.get("referenced_doc"):
         doc_chunks[state["referenced_doc"]] = get_document_chunks(
-            state["referenced_doc"], lang
+            state["referenced_doc"], lang, clearance
         )
     return {"doc_chunks": doc_chunks}
 
@@ -122,6 +144,7 @@ def _citation(meta: dict, governs_note: str = "") -> dict:
         "approver_name": meta["approver_name"],
         "approver_role": meta["approver_role"],
         "governs_note": governs_note,
+        "confidential": meta.get("classification") == "confidential",
     }
 
 
@@ -250,9 +273,14 @@ def get_graph():
     return _compiled_graph
 
 
-def ask(question: str, department: str | None = None) -> dict:
+def ask(question: str, department: str | None = None, clearance: str = "standard") -> dict:
+    # clearance defaults to "standard" (no confidential access) until a real
+    # identity provider exists - see app/server.py. Every caller (CLI, API,
+    # UI) goes through this same default today, which is the point of
+    # Phase 1: prove the filtering itself is correct before anything wires
+    # up who's actually allowed to pass "cleared".
     graph = get_graph()
-    result = graph.invoke({"question": question, "department": department})
+    result = graph.invoke({"question": question, "department": department, "clearance": clearance})
     return {
         "answer": result["answer"],
         "case": result["case"],
