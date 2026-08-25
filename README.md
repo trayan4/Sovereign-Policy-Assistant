@@ -62,11 +62,11 @@ if it's just one policy,then it checks if it's expired or still valid.
 
 ## 6. How to run it
 
-**Prerequisites:** Docker Desktop (or another Docker Engine) running.
+**Prerequisites:** Docker Desktop (or another Docker Engine) running. That's it - everything else (Ollama, Keycloak, the vector store) runs inside containers, nothing else to install on the host.
 
 ```bash
-# 1. Bring up ollama + app + ui + watcher (pulls model weights into the
-#    ollama container on first run - this step is slow only once)
+# 1. Bring up ollama + keycloak + app + ui + watcher (pulls model weights
+#    into the ollama container on first run - this step is slow only once)
 docker compose up -d
 
 # 2. Ingest the policy library - run once, inside the app container,
@@ -74,25 +74,14 @@ docker compose up -d
 #    this first run; from here on, the watcher service (started as part
 #    of step 1) re-runs this automatically whenever policy_library/ changes.
 docker compose run --rm app python scripts/ingest.py
-```
-
-To get this running on a brand new machine from scratch (nothing installed yet):
-
-```bash
-# 0. Install Docker Desktop first, then clone the repo
-git clone https://github.com/trayan4/Sovereign-Policy-Assistant.git
-cd Sovereign-Policy-Assistant
-
-# 1 & 2 same as above - docker compose up -d, then the ingest command
 
 # 3. Open the UI
 http://localhost:8501
-
-# You'll hit a login screen - see the Security section below for the
-# demo accounts. No account = no access, not even to ask a question.
 ```
 
-One gotcha worth knowing: if you're pulling code changes into an already-running setup (not starting fresh) and `keycloak/realm-export.json` changed, a plain `docker compose up -d --build` won't pick that up - Compose only recreates a container when the image or its own config changes, not when the *contents* of a bind-mounted file change. Force it explicitly:
+Step 3 puts you at a login screen, not the app itself - see the Security section below for the demo accounts. No account, no access, not even to ask a question.
+
+One gotcha worth knowing: if `keycloak/realm-export.json` ever changes (a new role, a new demo account) after Keycloak has already started once, a plain `docker compose up -d --build` won't pick that up - Compose only recreates a container when the image or its own config changes, not when the *contents* of a bind-mounted file change underneath it. Force it explicitly:
 
 ```bash
 docker compose rm -sf keycloak
@@ -119,10 +108,9 @@ Which policies are confidential is decided by the document itself, not a list in
 
 ### Demo credentials
 
-| Username | Password | Role |
-|---|---|---|
-| `standard_user` | `demo1234` | `standard_staff` |
-| `cleared_user` | `demo1234` | `cleared_staff` |
-| `admin_user` | `demo1234` | `compliance_admin` |
+Username | Password | Role |
+`standard_user` | `demo1234` | `standard_staff` |
+`cleared_user` | `demo1234` | `cleared_staff` |
+`admin_user` | `demo1234` | `compliance_admin` |
 
 These live in `keycloak/realm-export.json` and get created automatically the first time the Keycloak container starts. They're demo accounts, not a real identity source - a real rollout replaces them with the bank's actual directory, not more hand-typed users.
