@@ -12,7 +12,7 @@ All of that metadata — document facts, policy status, governance relationships
 is derived automatically from the documents themselves. I made this decision choice so that the solution remains scalable with the addition of new policy docs.
 
 This document explains what the project is built from, what every file does, and
-how to run and export it. A companion file (use_cases.md), lists
+how to run and export it. A companion file (use_cases.csv), lists
 example questions to test it with.
 
 ---
@@ -79,7 +79,7 @@ docker compose run --rm app python scripts/ingest.py
 http://localhost:8501
 ```
 
-Step 3 puts you at a login screen, not the app itself - see the Security section below for the demo accounts. No account, no access, not even to ask a question.
+Step 3 puts you at a login screen, not the app itself - see the Security section below for the demo accounts.
 
 One gotcha worth knowing: if `keycloak/realm-export.json` ever changes (a new role, a new demo account) after Keycloak has already started once, a plain `docker compose up -d --build` won't pick that up - Compose only recreates a container when the image or its own config changes, not when the *contents* of a bind-mounted file change underneath it. Force it explicitly:
 
@@ -113,4 +113,4 @@ Username | Password | Role |
 `cleared_user` | `demo1234` | `cleared_staff` |
 `admin_user` | `demo1234` | `compliance_admin` |
 
-These live in `keycloak/realm-export.json` and get created automatically the first time the Keycloak container starts. They're demo accounts, not a real identity source - a real rollout replaces them with the bank's actual directory, not more hand-typed users.
+These live in `keycloak/realm-export.json` and get created automatically the first time the Keycloak container starts.
