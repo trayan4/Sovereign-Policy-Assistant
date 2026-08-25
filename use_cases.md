@@ -281,7 +281,7 @@ Generated directly from `use_cases.csv` - every field below is copied as-is from
 **Actual:** You are entitled to 15 fully paid sick leave days per calendar year. For KYC, corporate customers need to provide a valid KYC document.
 **Notes:** Tests that a compound question doesn't get a hallucinated second half.
 
-**Q:** A question mixing English and Arabic in the same sentence.
+**Q:** A question mixing English and Arabic in the same sentence. Example: "ما هو the maximum daily cash withdrawal limit at a branch teller?"
 *Role:* any  ·  *Language:* en/ar
 **Expected:** Handled honestly - either answers or refuses, does not break.
 **Actual:** 
